@@ -1,7 +1,7 @@
 from flask import Flask, request, Response
 from twilio.twiml.messaging_response import MessagingResponse
 # Import your existing game logic
-from level import register_client, get_client_info, get_messages, get_streaks, get_target, ID
+from level import register_client, get_client_info, get_messages, get_streaks, get_target, ID, __clients
 from llama import check_action, handle_client, daily_quiz, daily_ask_if_done_saving
 
 app = Flask(__name__)
@@ -29,13 +29,18 @@ def reply_whatsapp():
         info = get_client_info(clientId)
         resp.message(f"Client Info: {info}")
         return Response(str(resp), mimetype='text/xml')
+    
+    if "leaderboard" in incoming_msg.lower():
+        leaderboard = f"🏆 Leaderboard:\n1. John Doe (Level: {__clients[ID]['Level']}) \n2. Daniel (Level: 1)"
+        resp.message(leaderboard)
+        return Response(str(resp), mimetype='text/xml')
 
     # Store user message
     messages = get_messages(clientId)
     messages.append({"role": "user", "content": incoming_msg})
 
     # Get AI response (calls your llama handler)
-    ai_response = handle_client(clientId)
+    ai_response = handle_client(clientId, resp)
 
     # Send back Twilio message
     if ai_response:

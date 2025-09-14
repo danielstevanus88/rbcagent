@@ -2,7 +2,7 @@ from flask import Flask, request, Response
 import twilio
 from twilio.twiml.messaging_response import MessagingResponse
 # Import your existing game logic
-from level import register_client, get_client_info, get_messages, get_streaks, get_target, ID
+from level import register_client, get_client_info, get_messages, get_streaks, get_target, ID, __clients
 from llama import check_action, handle_client, daily_quiz, daily_ask_if_done_saving
 
 app = Flask(__name__)
