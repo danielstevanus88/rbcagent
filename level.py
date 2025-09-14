@@ -6,11 +6,50 @@ from api import ClientAPI
 EXP_STREAK_DAILY_SAVING = 20
 EXP_STREAK_WEEKLY_INVEST = 50
 
-ID = "40106060-e28a-4d96-8148-a58656336dcb"
+ID = "eec20378-12c4-4e55-9b0b-bdb292590b77"
 
 #__clients: A dictionary of clients id mapped to client information clientInfo
 __clients = {}
+__portfolios = {}
 
+def savePortfolioToFile(portfolioId, clientId):
+    with open("portfolios.txt", "a") as f:
+        f.write(f"{clientId}|{portfolioId}\n")
+
+def savePortfolio(portfolioId, clientId):
+    if clientId not in __portfolios:
+        __portfolios[clientId] = []
+    __portfolios[clientId].append(portfolioId)
+    savePortfolioToFile(portfolioId, clientId)
+
+def readPortfoliosFromFile():
+    try:
+        with open("portfolios.txt", "r") as f:
+            lines = f.readlines()
+            for line in lines:
+                clientId, portfolioId = line.strip().split("|")
+                if clientId not in __portfolios:
+                    __portfolios[clientId] = []
+                __portfolios[clientId].append(portfolioId)
+    except FileNotFoundError:
+        pass    
+
+readPortfoliosFromFile()
+
+def getPortfolioIdByType(clientId, portfolio_type: str) -> str | None:
+    if clientId not in __clients or clientId not in __portfolios:
+        print(f'client with id {clientId} is not registered at the system')
+        return None
+    for portfolioId in __portfolios[clientId]:
+        portfolio_info = ClientAPI.get_portfolio(portfolioId)
+        if portfolio_info["success"] and portfolio_info["data"]["type"] == portfolio_type:
+            return portfolioId
+    return None
+
+# portfolio = {
+#     "type": "aggressive_growth",
+#     "clientId": ID
+# }
 # clientInfo default value
 clientInfo_default = {
     "id": ID,
@@ -34,15 +73,9 @@ clientInfo_default = {
     }],
     "Last Investment Time": None,
     "Last Saving Time": None,
-    "Last Quiz Time": None,
-    "Portfolios" : {
-        "aggressive_growth": None,
-        "growth": None,
-        "balanced": None,
-        "conservative": None,
-        "very_conservative": None
-    }
+    "Last Quiz Time": None
 }
+
 
 
 # Client management functions
@@ -137,20 +170,20 @@ def done_weekly_invest(clientId):
     add_exp(clientId, EXP_STREAK_WEEKLY_INVEST)
 
 
-def getPortfolioId(clientId, portfolio_name: str) -> str | None:
-    if clientId not in __clients:
-        print(f'client with id {clientId} is not registered at the system')
-        return None
-    if portfolio_name not in __clients[clientId]["Portfolios"]:
-        print(f"Warning: client with id {clientId} does not have a portfolio named {portfolio_name}")
-        return None
-    return __clients[clientId]["Portfolios"][portfolio_name]
+# def getPortfolioId(clientId, portfolio_name: str) -> str | None:
+#     if clientId not in __clients:
+#         print(f'client with id {clientId} is not registered at the system')
+#         return None
+#     if portfolio_name not in __clients[clientId]["Portfolios"]:
+#         print(f"Warning: client with id {clientId} does not have a portfolio named {portfolio_name}")
+#         return None
+#     return __clients[clientId]["Portfolios"][portfolio_name]
 
-def addPortfolio(clientId, portfolio_name: str, portfolio_id: str):
-    if clientId not in __clients:
-        print(f'client with id {clientId} is not registered at the system')
-        return
-    if portfolio_name in __clients[clientId]["Portfolios"]:
-        print(f"Warning: client with id {clientId} already has a portfolio named {portfolio_name}")
-        return
-    __clients[clientId]["Portfolios"][portfolio_name] = portfolio_id
+# def addPortfolio(clientId, portfolio_name: str, portfolio_id: str):
+#     if clientId not in __clients:
+#         print(f'client with id {clientId} is not registered at the system')
+#         return
+#     if portfolio_name in __clients[clientId]["Portfolios"]:
+#         print(f"Warning: client with id {clientId} already has a portfolio named {portfolio_name}")
+#         return
+#     __clients[clientId]["Portfolios"][portfolio_name] = portfolio_id

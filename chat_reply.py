@@ -1,4 +1,5 @@
 from flask import Flask, request, Response
+import twilio
 from twilio.twiml.messaging_response import MessagingResponse
 # Import your existing game logic
 from level import register_client, get_client_info, get_messages, get_streaks, get_target, ID
@@ -35,7 +36,7 @@ def reply_whatsapp():
     messages.append({"role": "user", "content": incoming_msg})
 
     # Get AI response (calls your llama handler)
-    ai_response = handle_client(clientId)
+    ai_response = handle_client(clientId, resp)
 
     # Send back Twilio message
     if ai_response:
@@ -47,7 +48,7 @@ def reply_whatsapp():
 
 
 # --- Daily routines (can be triggered manually or via cron/apscheduler) ---
-@app.route("/daily_quiz", methods=["GET"])
+@app.route("/daily_quiz", methods=["GET", "POST"])
 def run_quiz():
     resp = MessagingResponse()
     ai_response = daily_quiz(clientId)

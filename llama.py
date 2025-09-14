@@ -3,14 +3,14 @@ import groq
 from copy import deepcopy
 from groq import Groq
 from api import ClientAPI
-from level import isPortfolioEmpty, addPortfolio
+# from level import getPortfolioId, addPortfolio, 
+from level import savePortfolio, getPortfolioIdByType, __portfolios
 import cohere
 # Make sure you have set this in your environment first, e.g.:
 #   export GROQ_API_KEY="your_api_key_here"   (Linux/macOS)
 #   setx GROQ_API_KEY "your_api_key_here"     (Windows PowerShell)
 
 # Temporary constant for demonstration purposes
-AMOUNT_INVESTED = 50  # Change to rbcinvestease api call
 LIST_OF_STRATEGIES = ["aggressive_growth", "growth", "balanced", "conservative", "very_conservative"]  # Placeholder for actual API call
 
 # Initialize Groq Client for the Llama3 AI model
@@ -28,7 +28,7 @@ instructions = {
     },
 
     "SET_DAILY_SAVING_AMOUNT": {
-        "description": "Use this when the user sets or changes the amount they want to save each day. Example: 'Save $5 daily.'",
+        "description": "Use this when the user sets or changes the amount they want to save each day. IMPORTANT: This doesnt mean that the user SAVED today. Example: 'Save $5 daily.'",
         "parameters": {
             "amount": "number - The daily saving amount."
         },
@@ -48,7 +48,7 @@ instructions = {
     },
 
     "GET_INFO": {
-        "description": "Use this when the user asks for their information: level, exp, streaks, target item/amount, or daily saving amount. Example: 'What is my level?' or 'Show me my streak.'",
+        "description": "Use this when the user asks for their information (except portfolio): level, exp, streaks, target item/amount, or daily saving amount. Example: 'What is my level?' or 'Show me my streak.'",
         "parameters": {},
         "format": ""
     },
@@ -65,16 +65,16 @@ instructions = {
             "portfolioId": "string - The ID of the portfolio to withdraw from.",
             "amount": "number - The amount to withdraw."
         },
-        "format": "amount | portfolio"
+        "format": "amount | portfolioId"
     },
 
     "TRANSFER": {
-        "description": "Use this when the user asks to transfer or invest a specific amount of money into a specific investment portfolio. Example: 'Invest $50 in my growth fund.'",
+        "description": "Use this when the user asks to transfer or invest a specific amount of money into a specific investment portfolio id. Only do this if you know the ID (can be from the user's portfolio list). Example: 'Invest $50 in portfolio ID 12345.'",
         "parameters": {
             "portfolioId": "string - The ID of the portfolio to invest in.",
             "amount": "number - The amount to invest."
         },
-        "format": "amount | portfolio"
+        "format": "amount | portfolioId"
     },
 
     "NEED_MORE_INFO": {
@@ -160,15 +160,13 @@ def UPDATE_EMAIL(clientId, params: list[str]):
     return res["success"], res["error"] if not res["success"] else None
 
 def GET_PORTFOLIOS(clientId, params: list[str]):
-    res = ClientAPI.list_portfolios(clientId)
-    print(res)
-    if not res["success"]:
-        return False, res["error"]["message"]
-    portfolios = res["data"]
+    portfolios = __portfolios.get(clientId, [])
     if not portfolios:
         print("Empty portfolio list")
         return True, "Let them know that they currently have no investment portfolios. Important: Suggest them to create one."
-    return True, f"Summarize {portfolios} into something readable and simple for youth. IMPORTANT: If it has 0 invested amount, it means it is empty but still show it."
+    portfolios_info = [ClientAPI.get_portfolio(pid) for pid in portfolios]
+    print("AAAAA", portfolios_info)
+    return True, f"Summarize {portfolios_info} into something readable and simple for youth. IMPORTANT: If it has 0 invested amount, it means it is empty but still show it."
 
 def CREATE_PORTFOLIO(clientId, params: list[str]):
     if len(params) != 1:
@@ -177,16 +175,15 @@ def CREATE_PORTFOLIO(clientId, params: list[str]):
     portfolio_strategy = params[0] if params[0].lower() != "null" else None
     if portfolio_strategy not in LIST_OF_STRATEGIES:
         return False, f"Error: Invalid portfolio strategy '{portfolio_strategy}'. Must be one of {', '.join(LIST_OF_STRATEGIES)}"
-    if not isPortfolioEmpty(clientId, portfolio_strategy)::
+    if getPortfolioIdByType(clientId, portfolio_strategy) is not None:
         return False, f"Error: Portfolio '{portfolio_strategy}' already exists. Please choose a different strategy."
-    res = ClientAPI.create_portfolio(clientId, portfolio_strategy, 0)
+    res = ClientAPI.create_portfolio(clientId, portfolio_strategy, 100)  # Initial amount is set to 100 for demonstration
     if not res["success"]:
         return False, res["error"]["message"]
+    savePortfolio(res["data"]["id"], clientId)
+    return True, f"Portfolio '{portfolio_strategy}' with ID {res['data']['id']}' created successfully. Remember the strategy is {portfolio_strategy} so that if user want to add money to it you can refer to that id for the portfolioType parameter of TRANSFER"
 
-    addPortfolio(clientId, portfolio_strategy, res["data"]["id"])
-    return True, f"Portfolio '{portfolio_strategy}' created successfully."
-
-def TRANSFER(portfolioType, params: list[str]):
+def TRANSFER(clientId, params: list[str]):
     if len(params) != 2:
         print(f"Error: TRANSFER requires 2 parameters, got {len(params)}")
         return False, None
@@ -195,38 +192,40 @@ def TRANSFER(portfolioType, params: list[str]):
     except ValueError:
         print(f"Error: Amount must be a number, got '{params[0]}'")
         return False, None
-    portfolio = params[1]
-    res = ClientAPI.invest(portfolioId, amount)
+    portfolioId = params[1]
+    res = ClientAPI.transfer_to_portfolio(portfolioId, amount)
     if not res["success"]:
         return False, res["error"]["message"]
-    return True, f"Invested {amount} into portfolio '{portfolio}' successfully."
+    return True, f"Transferred {amount} into portfolio '{portfolioId }' successfully."
 
 def WITHDRAW(clientId, params: list[str]):
     if len(params) != 2:
         print(f"Error: WITHDRAW requires 2 parameters, got {len(params)}")
         return False, None
     try:
-        amount = float(params[0])
+        amount = float(int(params[0]))
     except ValueError:
         print(f"Error: Amount must be a number, got '{params[0]}'")
         return False, None
-    portfolioType = params[1]
-    if isPortfolioEmpty(clientId, portfolioType):
-        return False, f"Error: Portfolio '{portfolioType}' does not exist or is empty."
-    res = ClientAPI.withdraw(portfolioType, amount)
+    portfolioId = params[1]
+    if portfolioId is None:
+        return False, f"Error: Portfolio '{portfolioId}' does not exist or is empty."
+    res = ClientAPI.withdraw_from_portfolio(portfolioId, amount)
     if not res["success"]:
         return False, res["error"]["message"]
-    return True, f"Withdrew {amount} from portfolio '{portfolio}' successfully."
+    return True, f"IMPORTANT! Inform user that: Withdrew {amount} from portfolio '{portfolioId}' successfully."
 
 action_to_function = {
     "UPDATE_NAME": UPDATE_NAME,
     "UPDATE_EMAIL": UPDATE_EMAIL,
     "GET_PORTFOLIOS": GET_PORTFOLIOS,
     "CREATE_PORTFOLIO": CREATE_PORTFOLIO,
+    "WITHDRAW": WITHDRAW,
+    "TRANSFER": TRANSFER,
 }
 from level import __clients, register_client, get_client_info, get_messages, get_target, set_target, set_daily_saving, done_daily_saving, done_weekly_invest
 
-def do_action(clientId, action: str, params: list[str]):
+def do_action(clientId, action: str, params: list[str], resp):
     if action in action_to_function:
         return action_to_function[action](clientId, params)
 
@@ -289,17 +288,17 @@ def do_action(clientId, action: str, params: list[str]):
         info = get_client_info(clientId)
         info_message = (
             f"👤 *{info['Name']}*   (🏆 Level {info['Level']})\n"
-            f"─────────────────────────────────────────────\n"
+            f"───────────────────────\n"
             f"⭐ EXP: [{get_exp_bar(info['Exp'], info['ExpToNextLevel'])}]  {info['Exp']} / {info['ExpToNextLevel']}\n"
             f"💰 Daily Saving Amount: ${info['Daily Saving Amount']}\n"
-            f"─────────────────────────────────────────────\n"
-            f"🔥 Streak: {info['streaks']['Saving']} Days (Saving Streak)\n"
-            f"🔥 Streak: {info['streaks']['Investing']} Days (Investing Streak)\n"
-            f"─────────────────────────────────────────────\n"
-            f"🎯 Target: {f"\"{info['Saving Target']['Item']}\" {AMOUNT_INVESTED} / {info['Saving Target']['Amount']}" if info['Saving Target']['Item'] else 'Not set'}"
+            f"───────────────────────\n"
+            f"🔥 {info['streaks']['Saving']} Saving Day Streak)\n"
+            f"───────────────────────\n"
+            f"🎯 Target: {f"\"{info['Saving Target']['Item']}\" {ClientAPI.getTotalInvested(info['id'])} / {info['Saving Target']['Amount']}" if "NOT SET YET" not in info['Saving Target']['Item'] else 'None'}"
         )
         print(info_message)
-        return False, "Info provided from server. Let the user know that it has been sent."
+        resp.message(info_message)
+        return True, "Info provided from server. Let the user know that it has been sent. DO NOT SEND ANYTHING ELSE"
 
     elif "CORRECT_QUIZ" in action.upper():
         return True, f"Congratulate the user for answering the quiz correctly. Briefly explain why their answer is correct: {params[0]}"
@@ -308,7 +307,7 @@ def do_action(clientId, action: str, params: list[str]):
 
     return True, None
 
-def check_action(clientId, messages):
+def check_action(clientId, messages, resp):
     '''
     Returns True if and only if no action is needed or an action was successfully performed.
     '''
@@ -318,6 +317,8 @@ def check_action(clientId, messages):
     "role": "system",
     "content": (
         "You are a helpful assistant that helps users manage their investments and savings. "
+        "You know the following information about the user:\n"
+        f"Their portfolio consist of {(', '.join(f'ID: {portfolioId}, Type: {ClientAPI.get_portfolio(portfolioId)["data"]["type"]}' for portfolioId in __portfolios.get(clientId, []) ))}"
         "You can perform the following actions:\n\n"
         + "\n\n".join([
             f"{key}:\nDescription: {value['description']}\nParameters: "
@@ -327,10 +328,13 @@ def check_action(clientId, messages):
         + "\n\nIMPORTANT INSTRUCTIONS:\n"
         "- It can be the case where the user wants to perform two or more ACTIONS in one message. In that case, you should prioritize the one that is most relevant to the user's request and followup after."
         "- ALWAYS respond with the ACTION NAME, followed by its parameters in the specified format.\n"
+        "- Use NEED_MORE_INFO if you want to ask follow-up questions, dont use other action before it's clear."
         "- The format is: ACTION_NAME | param1 | param2 | ... | paramN |\n"
         "- If there are no parameters, still return the action name only.\n"
         "- If no action is needed, respond with: NO_ACTION\n"
         "- DO NOT explain, DO NOT add extra words, DO NOT output JSON.\n\n"
+        "- We will not be dealing with any other actions outside of these or even outside the chat scope."
+        "- Portfolio Strategy/Type can be one of the following: aggressive_growth, growth, balanced, conservative, very_conservative.\n"
         "Examples:\n"
         "User: I want to save $5 per day\n"
         "Response: SET_DAILY_SAVING | 5\n\n"
@@ -365,16 +369,22 @@ def check_action(clientId, messages):
     action_parts = action_response.strip().split("|")
     action = action_parts[0].strip()
     params = [part.strip() for part in action_parts[1:]] if len(action_parts) > 1 else []
-    return do_action(clientId, action, params)
+    return do_action(clientId, action, params, resp)
     
 
-def handle_client(clientId):
+def handle_client(clientId, resp):
     messages = get_messages(clientId)
     if messages is None:
         return  # Client not registered
 
-    successfulAction, message = check_action(clientId, messages)
+    successfulAction, message = check_action(clientId, messages, resp)
     if not successfulAction:
+        if message:
+            messages.append({
+                "role": "system",
+                "content": message
+            })
+        else:
             messages.append({
                 "role": "system",
                 "content": f"Let the user know that the previous request failed to be processed. Ask them to try again. Make it short and polite."
@@ -410,6 +420,8 @@ def handle_client(clientId):
         "content": res
     })
 
+    return res
+
 
 def daily_quiz(clientId):
     messages = get_messages(clientId)
@@ -433,6 +445,8 @@ def daily_quiz(clientId):
         "content": "Daily Quiz: " + message
     })
 
+    return "Daily Quiz: " + message
+
 
 def daily_ask_if_done_saving(clientId):
     messages = get_messages(clientId)
@@ -447,3 +461,4 @@ def daily_ask_if_done_saving(clientId):
 
     # Send message to user (placeholder)
     print("Daily Ask If Done Saving:", question)
+    return question

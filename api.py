@@ -1,7 +1,7 @@
 import requests
 
 BASE_URL = "https://2dcq63co40.execute-api.us-east-1.amazonaws.com/dev"
-API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZWFtSWQiOiJjMDI3ODUyMS02YWMxLTRlNmMtOTlmNi04NzkwZjUyZTZiNjAiLCJ0ZWFtX25hbWUiOiJBbGF0IERldmVsb3BlciIsImNvbnRhY3RfZW1haWwiOiJhbGF0QGdtYWlsLmNvbSIsImV4cCI6MTc1ODYzOTAxMS40MzQyNjR9.5_RW2JuPMDJEZJJp_sQjhQNXHkFN8YV4VQqSdmH7QoI"  # Replace with your key
+API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZWFtSWQiOiI4NjcxMzhhYi05ZDllLTQwZjAtODg1NC02YTgxMGVkY2FjMzMiLCJ0ZWFtX25hbWUiOiJEYW5uIiwiY29udGFjdF9lbWFpbCI6ImRhbmllbC5zdGV2YW51c0BtYWlsLnV0b3JvbnRvLmNhIiwiZXhwIjoxNzU4NjgyNzE4LjI4MTE3Nn0.gWnbXpQTt7s8K0bqxTdYEbUh6n2EGmjYSgNVfQki-mw"  # Replace with your key
 CLIENTS_FILE = "clients.txt"
 HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
@@ -9,6 +9,41 @@ HEADERS = {
 }
 
 class ClientAPI:
+    @staticmethod
+    def getTotalInvested(client_id: str) -> float:
+        """
+        Calculate the total amount invested across all portfolios for a given client.
+
+        Parameters:
+            client_id (str): The unique identifier of the client.
+        Returns:
+            float: Total amount invested across all portfolios.
+        """
+
+        portfolios_res = ClientAPI.list_portfolios(client_id)
+        if not portfolios_res["success"]:
+            return 0.0
+        portfolios = portfolios_res["data"]
+        total_invested = sum(portfolio.get("invested_amount", 0.0) for portfolio in portfolios)
+        return total_invested
+
+    @staticmethod
+    def getCurrentValue(client_id: str) -> float:
+        """
+        Calculate the total amount invested across all portfolios for a given client.
+
+        Parameters:
+            client_id (str): The unique identifier of the client.
+        Returns:
+            float: Total amount invested across all portfolios.
+        """
+
+        portfolios_res = ClientAPI.list_portfolios(client_id)
+        if not portfolios_res["success"]:
+            return 0.0
+        portfolios = portfolios_res["data"]
+        total_invested = sum(portfolio.get("current_value", 0.0) for portfolio in portfolios)
+        return total_invested
 
     @staticmethod
     def create_client(name: str, email: str, cash: float, portfolios: list = None):
@@ -194,6 +229,28 @@ class ClientAPI:
             return {"success": False, "status_code": response.status_code, "error": data}
 
     @staticmethod
+    def hasPortfolioType(client_id: str, portfolio_type: str) -> bool:
+        """
+        Check if a client has a portfolio of a specific type.
+
+        Parameters:
+            client_id (str): The unique identifier of the client.
+            portfolio_type (str): Strategy type to check.
+
+        Returns:
+            bool: True if the portfolio type exists for the client, False otherwise.
+        """
+
+        portfolios_res = ClientAPI.list_portfolios(client_id)
+        if not portfolios_res["success"]:
+            return False
+        portfolios = portfolios_res["data"]
+        for portfolio in portfolios:
+            if portfolio["type"] == portfolio_type:
+                return True
+        return False
+
+    @staticmethod
     def get_portfolio(portfolio_id: str):
         """
         Get detailed information about a specific portfolio.
@@ -261,6 +318,7 @@ class ClientAPI:
         Returns:
             dict: JSON response from the API.
         """
+        print(f"Withdrawing {amount} from portfolio {portfolio_id}")
         url = f"{BASE_URL}/portfolios/{portfolio_id}/withdraw"
         payload = {"amount": amount}
 
@@ -278,6 +336,25 @@ class ClientAPI:
             print(f"❌ Error withdrawing from portfolio {portfolio_id}: {data}")
             return {"success": False, "status_code": response.status_code, "error": data}
 
+    @staticmethod
+    def getPortfolioId_FromType(client_id: str, portfolio_type: str) -> dict | None:
+        """
+        Retrieve the portfolio ID for a given client and portfolio type.
+
+        Parameters:
+            client_id (str): The unique identifier of the client.
+            portfolio_type (str): The type of portfolio (e.g., 'aggressive_growth').
+        Returns:
+            dict | None: The portfolio ID if found, otherwise None.
+        """
+        portfolios_res = ClientAPI.list_portfolios(client_id)
+        if not portfolios_res["success"]:
+            return None
+        portfolios = portfolios_res["data"]
+        for portfolio in portfolios:
+            if portfolio["type"] == portfolio_type:
+                return portfolio["id"]
+        return None
 
     @staticmethod
     def get_portfolio_analysis(portfolio_id: str):
@@ -305,6 +382,7 @@ class ClientAPI:
         else:
             print(f"❌ Error retrieving portfolio analysis for {portfolio_id}: {data}")
             return {"success": False, "status_code": response.status_code, "error": data}
+
 
     @staticmethod
     def simulate_portfolios(client_id: str, months: int):
